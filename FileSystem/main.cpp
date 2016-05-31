@@ -35,7 +35,6 @@ FILE * theDISC;
 
 //size - w KB
 int createDisc(int size) {
-	int n;
 	discInfo infoBlock;
 	int blocks;
 	int	fatBlocks;
@@ -98,7 +97,7 @@ int deleteDisc() {
 
 int copyToDisc(char* filename) {
 
-	theDISC = fopen("VirtualDisc", "wb+");
+	theDISC = fopen("VirtualDisc", "rb+");
 
 	int fileSize = getSize(filename);
 	discInfo info;
@@ -124,21 +123,34 @@ int copyToDisc(char* filename) {
 
 	int firstCellAddress;
 	int previousCellAddress;
-	int cellAddress;
+	int cellAddress = 1;
 	bool firstCell = true;
 	list<int> fileAddresses;
 
 	for (int i = 0; i < blockToWrite; i++)
 	{
-		fread(&cellAddress, sizeof(int), 1, theDISC);
-		if (cellAddress == 0)
+		while (cellAddress != 0)
 		{
-			
-			fileAddresses.push_back(i);
-			if (firstCell)
+			fread(&cellAddress, sizeof(int), 1, theDISC);
+		}
+		
+		fileAddresses.push_back(i);
+		if (firstCell)
+		{
+			firstCellAddress = i;
+			firstCell = false;
+		}
+		else
+		{
+			if (i == blockToWrite - 1)
 			{
-				firstCellAddress = i;
-				firstCell = false;
+				int lastCell = -1;
+
+				fseek(theDISC, BLOCK_SIZE + previousCellAddress * sizeof(int), SEEK_SET);
+				fwrite(&lastCell, sizeof(int), 1, theDISC);
+				fseek(theDISC, BLOCK_SIZE + i * sizeof(int), SEEK_SET);
+				fileAddresses.pop_back();
+				fileAddresses.push_back(lastCell);
 			}
 			else
 			{
@@ -146,32 +158,61 @@ int copyToDisc(char* filename) {
 				fwrite(&previousCellAddress, sizeof(int), 1, theDISC);
 				fseek(theDISC, BLOCK_SIZE + i * sizeof(int), SEEK_SET);
 			}
-			//place file
-			previousCellAddress = i;
 		}
+		//place file
+		previousCellAddress = i;
 	}
 
-	/*fseek(theDISC, sizeof(fileInfo), SEEK_SET);
-	bool headerCreated = false;
+	FILE * newFile = fopen(filename, "rb+");
+	//make file header
+	fseek(theDISC, sizeof(fileInfo), SEEK_SET);
 	fileInfo fileHeader;
 
 	for (int i = 0; i < MAX_FILES; i++)
 	{
-
 		fread(&fileHeader, sizeof(fileInfo), 1, theDISC);
 		if (fileHeader.size == 0)
 		{
 			//mozna zapisac plik
-			headerCreated = true;
-			fseek(theDISC, sizeof(fileHeader), SEEK_CUR);
+			int sizeOfHeader = sizeof(fileHeader);
+			sizeOfHeader = -sizeOfHeader;
+
+			fseek(theDISC, sizeOfHeader, SEEK_CUR);
 			//dodanie info o pliku
 			fileInfo fileData;
-			fileData.
+			fileData.address = firstCellAddress;
+			fileData.size = getSize(filename);
+			strcpy(fileData.name, filename);
+			fwrite(&fileData, sizeof(fileInfo), 1, theDISC);
+			break;
 		}
-	}*/
+	}
 
+	char buffer[BLOCK_SIZE];
+	//write file
+	for (int i = 0; i < blockToWrite; i++)
+	{
+		int blockAddress = fileAddresses.front();
+		fileAddresses.pop_front();
+		
+		if (blockAddress != -1)
+		{
+			fread(&buffer, BLOCK_SIZE, 1, theDISC);
+			fseek(theDISC, BLOCK_SIZE * (blockAddress + info.nonDataSize), SEEK_SET);
+			fwrite(&buffer, BLOCK_SIZE, 1, theDISC);
+		}
+		else
+		{
+			int finalSizeToWrite = getSize(filename) % BLOCK_SIZE;
+
+			fread(&buffer, finalSizeToWrite, 1, theDISC);
+			fseek(theDISC, BLOCK_SIZE * (blockAddress + info.nonDataSize), SEEK_SET);
+			fwrite(&buffer, finalSizeToWrite, 1, theDISC);
+		}
+	}
+
+	fclose(newFile);
 	fclose(theDISC);
-
 	return 1;
 }
 
@@ -181,6 +222,8 @@ void main() {
 	cin >> a;
 	createDisc(a);
 	cout << getSize("VirtualDisc");
+	//copyToDisc("test1");
+
 	_getch();
 	deleteDisc();
 }
