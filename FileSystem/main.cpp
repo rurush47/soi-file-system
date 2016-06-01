@@ -1,12 +1,13 @@
 ﻿#include "fileSystem.h"
 using namespace std;
+FileSystem fileSystem;
 
 void main() {
-	//createDisc(a);
+	//fileSystem.monitorTest();
 	while (1)
 	{
 		cout << "\nSystem plikow.\nWybierz polecenie:\n1. Stworz dysk.\n2. Skopiuj plik na dysk.\n" <<
-			"3. Usun dysk.\n4. Skopiuj plik na komputer.\n5. Wyswietl tablice FAT.\n6. Usun plik.\n7. Pokaż katalog."<< 
+			"3. Usun dysk.\n4. Skopiuj plik na komputer.\n5. Wyswietl tablice FAT.\n6. Usun plik.\n7. Pokaz katalog."<< 
 			"\n8. Wyswietl informacje o dysku." << endl;
 
 		int a;
@@ -19,7 +20,7 @@ void main() {
 				cout << "Podaj pojemnosc w kB: ";
 				int size;
 				cin >> size;
-				createDisc(size);
+				fileSystem.createDisc(size);
 				break;
 			}
 			case (2):
@@ -30,12 +31,12 @@ void main() {
 				char filename[24];
 				cin >> input;
 				strcpy(filename, input.c_str());
-				copyToDisc(filename);
+				fileSystem.copyToDisc(filename);
 				break;
 			}
 			case (3):
 			{
-				deleteDisc();
+				fileSystem.deleteDisc();
 				break;
 			}
 			case (4):
@@ -53,12 +54,12 @@ void main() {
 				cin >> input;
 				strcpy(outputName, input.c_str());
 
-				copyOutside(filename, outputName);
+				fileSystem.copyOutside(filename, outputName);
 				break;
 			}
 			case (5):
 			{
-				printFAT();
+				fileSystem.printFAT();
 				break;
 			}
 			case (6):
@@ -70,17 +71,17 @@ void main() {
 				cin >> input;
 				strcpy(filename, input.c_str());
 
-				deleteFile(filename);
+				fileSystem.deleteFile(filename);
 				break;
 			}
 			case (7):
 			{
-				printCatalogue();
+				fileSystem.printCatalogue();
 				break;
 			}
 			case (8):
 			{
-				printDiscInfo();
+				fileSystem.printDiscInfo();
 				break;
 			}
 			default:

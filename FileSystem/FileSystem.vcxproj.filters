@@ -23,8 +23,11 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="monitor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="fileSystem.h">
-      <Filter>Source Files</Filter>
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
