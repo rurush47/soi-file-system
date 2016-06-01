@@ -28,7 +28,7 @@ int getSize(char * f) {
 	return file.tellg();
 }
 
-bool doesFileExist(FILE * disc, char* filename)
+int doesFileExist(FILE * disc, char* filename)
 {
 	fseek(disc, sizeof(discInfo), SEEK_SET);
 	fileInfo info;
@@ -38,11 +38,11 @@ bool doesFileExist(FILE * disc, char* filename)
 		fread(&info, sizeof(fileInfo), 1, disc);
 		if (strcmp(info.name, filename) == 0)
 		{
-			cout << "File already exist" << endl;
-			return true;
+			cout << "File exist" << endl;
+			return i;
 		}
 	}
-	return false;
+	return -1;
 }
 
 struct blockNumber {
@@ -50,6 +50,31 @@ struct blockNumber {
 };
 
 FILE * theDISC;
+
+void printFAT() {
+	cout << endl << "=Disc Info=" << endl;
+	FILE * theDISC = fopen("VirtualDisc", "rb+");
+	int m;
+	fileInfo f;
+	discInfo inf;
+	fread(&inf, sizeof(discInfo), 1, theDISC);
+	cout << inf.size << " " << inf.fileCount << " " << inf.freeBlocks << " " << inf.nonDataSize << endl;
+
+	for (int i = 0; i < 63; i++) {
+		fread(&f, sizeof(fileInfo), 1, theDISC);
+		cout << f.size << " " << f.address << " " << f.name << endl;
+	}
+
+	for (int i = 0; i < BLOCK_SIZE / sizeof(int); i++) {
+		fread(&m, sizeof(int), 1, theDISC);
+		if (m <= 9 && m >= 0)
+			cout << " ";
+		cout << m;
+		if (i % 32 == 31)
+			cout << endl;
+	}
+	fclose(theDISC);
+}
 
 //size - w KB
 int createDisc(int size) {
@@ -128,17 +153,27 @@ int copyToDisc(char* filename) {
 	fread(&info, sizeof(discInfo), 1, theDISC);
 
 	if (info.fileCount >= MAX_FILES)
+	{
+		cout << "Brak miejsca na pliki.\n";
 		return 0;
+	}
+
 
 	int blockToWrite = fileSize / BLOCK_SIZE;
 	if (fileSize % BLOCK_SIZE != 0)
-		fileSize += 1;
+		blockToWrite += 1;
 
 	if (blockToWrite > info.freeBlocks)
+	{
+		cout << "Brak miejsca na pliki.\n";
 		return 0;
+	}
 
-	if (doesFileExist(theDISC, filename))
+	if (doesFileExist(theDISC, filename) >= 0)
+	{
+		cout << "Plik o podanej nazwie już istnieje.\n";
 		return 0;
+	}
 
 	cout << "liczba blokow do zapisu:" << blockToWrite << endl;
 	//no space left
@@ -147,7 +182,7 @@ int copyToDisc(char* filename) {
 
 	//znajdowanie miejsca w facie
 	int firstCellAddress;
-	int previousCellAddress;
+	int previousCellAddress = 0;
 	int cellAddress = 1;
 	bool firstCell = true;
 	vector<int> fileAddresses;
@@ -158,7 +193,7 @@ int copyToDisc(char* filename) {
 	for (int i = 0; i < MAX_FILES; i++)
 	{
 		fread(&cellAddress, sizeof(int), 1, theDISC);
-		cout << cellAddress;
+		cout << previousCellAddress;
 		cout << endl;
 		if (cellAddress == 0)
 		{
@@ -170,7 +205,7 @@ int copyToDisc(char* filename) {
 			}
 			else
 			{
-				if (blocksLeft == 1)
+				if (blocksLeft == 0)
 				{
 					int lastCell = -1;
 
@@ -183,7 +218,7 @@ int copyToDisc(char* filename) {
 				else
 				{
 					fseek(theDISC, BLOCK_SIZE + previousCellAddress * sizeof(int), SEEK_SET);
-					fwrite(&previousCellAddress, sizeof(int), 1, theDISC);
+					fwrite(&i, sizeof(int), 1, theDISC);
 					fseek(theDISC, BLOCK_SIZE + i * sizeof(int), SEEK_SET);
 				}
 			}
@@ -192,6 +227,7 @@ int copyToDisc(char* filename) {
 			blocksLeft--;
 		}
 	}
+	printFAT();
 
 	FILE * newFile = fopen(filename, "rb+");
 	//make file header
@@ -211,7 +247,7 @@ int copyToDisc(char* filename) {
 			//dodanie info o pliku
 			fileInfo fileData;
 			fileData.address = firstCellAddress;
-			fileData.size = getSize(filename);
+			fileData.size = fileSize;
 			strcpy(fileData.name, filename);
 			fwrite(&fileData, sizeof(fileInfo), 1, theDISC);
 			cout << "Zapisano header "<< fileData.name <<" na miejscu: " << i << endl;
@@ -268,14 +304,88 @@ void gotoBeggining(FILE * disc)
 	fseek(theDISC, 0, SEEK_SET);
 }
 
-int copyOutside(char* filename)
+void gotoFat(FILE * disc)
 {
+	fseek(theDISC, BLOCK_SIZE, SEEK_SET);
+}
+
+discInfo getDiscInfo(FILE * disc)
+{
+	discInfo info;
+	fseek(disc, 0, SEEK_SET);
+	fread(&info, sizeof(discInfo), 1, disc);
+	return info;
+}
+
+inline bool doesFileExistOutside(const std::string& name) {
+	struct stat buffer;
+	return (stat(name.c_str(), &buffer) == 0);
+}
+
+int nextFatCell(FILE * disc, int currentCell)
+{
+	int cellAddress;
+	fseek(disc, BLOCK_SIZE + currentCell*sizeof(int), SEEK_SET);
+	fread(&cellAddress, sizeof(int), 1, disc);
+	
+	return cellAddress;
+}
+
+int copyOutside(char* filename, char* outputFilename)
+{
+	if (doesFileExistOutside(outputFilename))
+	{
+		cout << "Plik o podanej nazwie juz istnieje na komputerze!";
+		return 0;
+	}
+
 	theDISC = fopen("VirtualDisc", "rb+");
 
-	if (!doesFileExist(theDISC, filename))
-		return 0;
+	discInfo info = getDiscInfo(theDISC);
+	int headerAddress = doesFileExist(theDISC, filename);
 
-	gotoHeaders();
+	if (headerAddress == -1)
+	{
+		cout << "Nie ma pliku o podanej nazwie na wirtualnym dysku.";
+		return 0;
+	}
+
+	FILE * newFile = fopen(outputFilename, "wb+");
+
+	gotoHeaders(theDISC);
+	//goto right header
+	fileInfo fileHeader;
+	fseek(theDISC, sizeof(discInfo) + headerAddress * sizeof(fileInfo), SEEK_SET);
+	fread(&fileHeader, sizeof(fileInfo), 1, theDISC);
+
+	int fatAddress = fileHeader.address;
+
+	int count = 1;
+	while (1)
+	{
+		char buffer[BLOCK_SIZE];
+		int nextCell = nextFatCell(theDISC, fatAddress);
+
+		if (nextCell == -1)
+		{
+			int sizeToCopy = fileHeader.size % BLOCK_SIZE;
+
+			fseek(theDISC, BLOCK_SIZE * (fatAddress + info.nonDataSize), SEEK_SET);
+			fread(&buffer, sizeToCopy, 1, theDISC);
+			fwrite(&buffer, sizeToCopy, 1, newFile);
+			break;
+		}
+		else
+		{
+			fseek(theDISC, BLOCK_SIZE * (fatAddress + info.nonDataSize), SEEK_SET);
+			fread(&buffer, BLOCK_SIZE, 1, theDISC);
+			fwrite(&buffer, BLOCK_SIZE, 1, newFile);
+		}
+		fatAddress = nextCell;
+	}
+
+	fclose(newFile);
+	fclose(theDISC);
 }
 
 void main() {
@@ -283,7 +393,7 @@ void main() {
 	while (1)
 	{
 		cout << "\nSystem plikow.\nWybierz polecenie:\n1. Stworz dysk.\n2. Skopiuj plik na dysk.\n" <<
-			"3. Usun dysk.\n4. Skopiuj plik na komputer."<< endl;
+			"3. Usun dysk.\n4. Skopiuj plik na komputer.\n5. Wyswietl tablice FAT."<< endl;
 
 		int a;
 		cin >> a;
@@ -321,8 +431,19 @@ void main() {
 				char filename[24];
 				cin >> input;
 				strcpy(filename, input.c_str());
-				copyOutside(filename);
+
+				cout << "Podaj nazwe pliku docelowego: ";
+				std::cin.clear();
+				char outputName[24];
+				cin >> input;
+				strcpy(outputName, input.c_str());
+
+				copyOutside(filename, outputName);
 				break;
+			}
+			case (5):
+			{
+				printFAT();
 			}
 			default:
 				break;
