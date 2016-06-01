@@ -38,7 +38,7 @@ int doesFileExist(FILE * disc, char* filename)
 		fread(&info, sizeof(fileInfo), 1, disc);
 		if (strcmp(info.name, filename) == 0)
 		{
-			cout << "File exist" << endl;
+			cout << "File exist " << i << endl;
 			return i;
 		}
 	}
@@ -51,20 +51,17 @@ struct blockNumber {
 
 FILE * theDISC;
 
+void gotoFat(FILE * disc)
+{
+	fseek(disc, BLOCK_SIZE, SEEK_SET);
+}
+
+
 void printFAT() {
-	cout << endl << "=Disc Info=" << endl;
 	FILE * theDISC = fopen("VirtualDisc", "rb+");
 	int m;
-	fileInfo f;
-	discInfo inf;
-	fread(&inf, sizeof(discInfo), 1, theDISC);
-	cout << inf.size << " " << inf.fileCount << " " << inf.freeBlocks << " " << inf.nonDataSize << endl;
 
-	for (int i = 0; i < 63; i++) {
-		fread(&f, sizeof(fileInfo), 1, theDISC);
-		cout << f.size << " " << f.address << " " << f.name << endl;
-	}
-
+	gotoFat(theDISC);
 	for (int i = 0; i < BLOCK_SIZE / sizeof(int); i++) {
 		fread(&m, sizeof(int), 1, theDISC);
 		if (m <= 9 && m >= 0)
@@ -117,12 +114,6 @@ int createDisc(int size) {
 	for (int i = 0; i < (BLOCK_SIZE - sizeof(discInfo)) / sizeof(fileInfo); i++)
 		fwrite(&emptyFileInfo, sizeof(fileInfo), 1, theDISC);
 
-	//fseek(theDISC, BLOCK_SIZE, SEEK_SET);
-
-	/*int* fatTable = new int[blocks];
-	for (int i = 0; i < blocks; i++)
-		fatTable[i] = 0;*/
-	//write fat table block
 	int zero = 0;
 
 	fseek(theDISC, BLOCK_SIZE, SEEK_SET);
@@ -143,6 +134,15 @@ int deleteDisc() {
 	return remove("VirtualDisc");
 }
 
+int getBlocksCount(int filesize)
+{
+	int blocksCount = filesize / BLOCK_SIZE;
+	if (filesize % BLOCK_SIZE != 0)
+		blocksCount += 1;
+	
+	return blocksCount;
+}
+
 int copyToDisc(char* filename) {
 
 	theDISC = fopen("VirtualDisc", "rb+");
@@ -158,10 +158,7 @@ int copyToDisc(char* filename) {
 		return 0;
 	}
 
-
-	int blockToWrite = fileSize / BLOCK_SIZE;
-	if (fileSize % BLOCK_SIZE != 0)
-		blockToWrite += 1;
+	int blockToWrite = getBlocksCount(fileSize);
 
 	if (blockToWrite > info.freeBlocks)
 	{
@@ -202,6 +199,7 @@ int copyToDisc(char* filename) {
 			{
 				firstCellAddress = i;
 				firstCell = false;
+				fseek(theDISC, BLOCK_SIZE + (i + 1) * sizeof(int), SEEK_SET);
 			}
 			else
 			{
@@ -211,7 +209,7 @@ int copyToDisc(char* filename) {
 
 					fseek(theDISC, BLOCK_SIZE + previousCellAddress * sizeof(int), SEEK_SET);
 					fwrite(&lastCell, sizeof(int), 1, theDISC);
-					fseek(theDISC, BLOCK_SIZE + i * sizeof(int), SEEK_SET);
+					fseek(theDISC, BLOCK_SIZE + (i + 1) * sizeof(int), SEEK_SET);
 
 					break;
 				}
@@ -219,10 +217,9 @@ int copyToDisc(char* filename) {
 				{
 					fseek(theDISC, BLOCK_SIZE + previousCellAddress * sizeof(int), SEEK_SET);
 					fwrite(&i, sizeof(int), 1, theDISC);
-					fseek(theDISC, BLOCK_SIZE + i * sizeof(int), SEEK_SET);
+					fseek(theDISC, BLOCK_SIZE + (i + 1) * sizeof(int), SEEK_SET);
 				}
 			}
-			//place file
 			previousCellAddress = i;
 			blocksLeft--;
 		}
@@ -294,19 +291,14 @@ int copyToDisc(char* filename) {
 	return 1;
 }
 
-void gotoHeaders(FILE * disc)
+inline void gotoHeaders(FILE * disc)
 {
-	fseek(theDISC, sizeof(discInfo), SEEK_SET);
+	fseek(disc, sizeof(discInfo), SEEK_SET);
 }
 
 void gotoBeggining(FILE * disc)
 {
 	fseek(theDISC, 0, SEEK_SET);
-}
-
-void gotoFat(FILE * disc)
-{
-	fseek(theDISC, BLOCK_SIZE, SEEK_SET);
 }
 
 discInfo getDiscInfo(FILE * disc)
@@ -329,6 +321,13 @@ int nextFatCell(FILE * disc, int currentCell)
 	fread(&cellAddress, sizeof(int), 1, disc);
 	
 	return cellAddress;
+}
+
+void clearFatCell(FILE * disc, int currentCell)
+{
+	int emptyCell = 0;
+	fseek(disc, BLOCK_SIZE + currentCell * sizeof(int), SEEK_SET);
+	fwrite(&emptyCell, sizeof(int), 1, disc);
 }
 
 int copyOutside(char* filename, char* outputFilename)
@@ -388,12 +387,108 @@ int copyOutside(char* filename, char* outputFilename)
 	fclose(theDISC);
 }
 
+int deleteFile(char* filename)
+{
+	FILE * theDISC = fopen("VirtualDisc", "rb+");
+
+	int fatAddress;
+	int fileAddress = doesFileExist(theDISC, filename);
+	fileInfo fileHeader;
+	fileInfo emptyHeader;
+	discInfo info = getDiscInfo(theDISC);
+	emptyHeader.size = 0;
+	if (fileAddress == -1)
+	{
+		cout << "Plik o podanej nazwie nie istnieje\n";
+	}
+
+	//read address and delete header
+	//gotoHeaders(theDISC);
+	fseek(theDISC, sizeof(discInfo) + sizeof(fileInfo) * fileAddress, SEEK_SET);
+	fread(&fileHeader, sizeof(fileInfo), 1, theDISC);
+	fseek(theDISC, sizeof(discInfo) + sizeof(fileInfo) * fileAddress, SEEK_SET);
+	fatAddress = fileHeader.address;
+	fwrite(&emptyHeader, sizeof(fileInfo), 1, theDISC);
+
+	//delete fat and data
+	while (1)
+	{
+		char buffer[BLOCK_SIZE];
+		int nextCell = nextFatCell(theDISC, fatAddress);
+
+		if (nextCell == -1)
+		{
+			int sizeLeft = fileHeader.size % BLOCK_SIZE;
+
+			fseek(theDISC, BLOCK_SIZE * (fatAddress + info.nonDataSize), SEEK_SET);
+			fwrite(&buffer, sizeLeft, 1, theDISC);
+			clearFatCell(theDISC, fatAddress);
+			break;
+		}
+		else
+		{
+			fseek(theDISC, BLOCK_SIZE * (fatAddress + info.nonDataSize), SEEK_SET);
+			fwrite(&buffer, BLOCK_SIZE, 1, theDISC);
+			clearFatCell(theDISC, fatAddress);
+		}
+		fatAddress = nextCell;
+	}
+	//update disc info header
+	info.fileCount--;
+	info.freeBlocks += getBlocksCount(fileHeader.size);
+	fseek(theDISC, 0, SEEK_SET);
+	fwrite(&info, sizeof(discInfo), 1, theDISC);
+
+	fclose(theDISC);
+
+	return 1;
+}
+
+void printCatalogue()
+{
+	FILE * theDISC = fopen("VirtualDisc", "rb+");
+
+	fseek(theDISC, sizeof(discInfo), SEEK_SET);
+
+	for (int i = 0; i < MAX_FILES; i++)
+	{
+		fileInfo fileHeader;
+		fread(&fileHeader, sizeof(fileInfo), 1, theDISC);
+
+		if (fileHeader.size != 0)
+		{
+			cout << fileHeader.name << " ";
+		}
+	}
+	cout << "\n";
+
+	fclose(theDISC);
+}
+
+void printDiscInfo()
+{
+	FILE * theDISC = fopen("VirtualDisc", "rb+");
+	discInfo info;
+
+	//fseek(theDISC, 0, SEEK_SET);
+	fread(&info, sizeof(discInfo), 1, theDISC);
+
+	cout << "Liczba plikow: " << info.fileCount << "\n";
+	cout << "Wolne bloki pamieci: " << info.freeBlocks << "\n";
+	cout << "Wolna pamiec: " << info.freeBlocks*BLOCK_SIZE << "\n";
+	cout << "Pojemnosc: " << info.size*BLOCK_SIZE << "\n";
+	cout << "\n";
+
+	fclose(theDISC);
+}
+
 void main() {
 	//createDisc(a);
 	while (1)
 	{
 		cout << "\nSystem plikow.\nWybierz polecenie:\n1. Stworz dysk.\n2. Skopiuj plik na dysk.\n" <<
-			"3. Usun dysk.\n4. Skopiuj plik na komputer.\n5. Wyswietl tablice FAT."<< endl;
+			"3. Usun dysk.\n4. Skopiuj plik na komputer.\n5. Wyswietl tablice FAT.\n6. Usun plik.\n7. Pokaż katalog."<< 
+			"\n8. Wyswietl informacje o dysku." << endl;
 
 		int a;
 		cin >> a;
@@ -422,6 +517,7 @@ void main() {
 			case (3):
 			{
 				deleteDisc();
+				break;
 			}
 			case (4):
 			{
@@ -444,6 +540,29 @@ void main() {
 			case (5):
 			{
 				printFAT();
+				break;
+			}
+			case (6):
+			{
+				cout << "Podaj nazwe pliku: ";
+				std::cin.clear();
+				string input;
+				char filename[24];
+				cin >> input;
+				strcpy(filename, input.c_str());
+
+				deleteFile(filename);
+				break;
+			}
+			case (7):
+			{
+				printCatalogue();
+				break;
+			}
+			case (8):
+			{
+				printDiscInfo();
+				break;
 			}
 			default:
 				break;
