@@ -2,7 +2,8 @@
 #include <conio.h>
 #include <fstream>
 #include <iostream>
-#include <list>
+#include <vector>
+#include <string>
 using namespace std;
 
 #define BLOCK_SIZE 2048
@@ -25,6 +26,23 @@ struct fileInfo {
 int getSize(char * f) {
 	ifstream file(f, ios::binary | ios::ate);
 	return file.tellg();
+}
+
+bool doesFileExist(FILE * disc, char* filename)
+{
+	fseek(disc, sizeof(discInfo), SEEK_SET);
+	fileInfo info;
+
+	for (int i = 0; i < MAX_FILES; i++)
+	{
+		fread(&info, sizeof(fileInfo), 1, disc);
+		if (strcmp(info.name, filename) == 0)
+		{
+			cout << "File already exist" << endl;
+			return true;
+		}
+	}
+	return false;
 }
 
 struct blockNumber {
@@ -60,7 +78,7 @@ int createDisc(int size) {
 	infoBlock.size = blocks;
 	infoBlock.fileCount = 0;
 	infoBlock.freeBlocks = blocks;
-	infoBlock.nonDataSize = BLOCK_SIZE * (fatBlocks + 1);
+	infoBlock.nonDataSize = (fatBlocks + 1);
 
 	//open/make new file
 	theDISC = fopen("VirtualDisc", "wb+");
@@ -76,11 +94,16 @@ int createDisc(int size) {
 
 	//fseek(theDISC, BLOCK_SIZE, SEEK_SET);
 
-	int* fatTable = new int[blocks];
+	/*int* fatTable = new int[blocks];
 	for (int i = 0; i < blocks; i++)
-		fatTable[i] = 0;
+		fatTable[i] = 0;*/
 	//write fat table block
-	fwrite(&fatTable, sizeof(fatTable), 1, theDISC);
+	int zero = 0;
+
+	fseek(theDISC, BLOCK_SIZE, SEEK_SET);
+	for (int i = 0; i < blocks; i++)
+		fwrite(&zero, sizeof(int), 1, theDISC);
+
 	fseek(theDISC, BLOCK_SIZE * (1 + fatBlocks), SEEK_SET);
 	//size for blocks
 	for (int i = 0; i < blocks; i++) {
@@ -114,53 +137,60 @@ int copyToDisc(char* filename) {
 	if (blockToWrite > info.freeBlocks)
 		return 0;
 
+	if (doesFileExist(theDISC, filename))
+		return 0;
+
+	cout << "liczba blokow do zapisu:" << blockToWrite << endl;
 	//no space left
 	//przesunięcie do tablicy z plikami
 	//header 
 
 	//znajdowanie miejsca w facie
-	fseek(theDISC, BLOCK_SIZE, SEEK_SET);
-
 	int firstCellAddress;
 	int previousCellAddress;
 	int cellAddress = 1;
 	bool firstCell = true;
-	list<int> fileAddresses;
+	vector<int> fileAddresses;
 
-	for (int i = 0; i < blockToWrite; i++)
+	int blocksLeft = blockToWrite;
+
+	fseek(theDISC, BLOCK_SIZE, SEEK_SET);
+	for (int i = 0; i < MAX_FILES; i++)
 	{
-		while (cellAddress != 0)
+		fread(&cellAddress, sizeof(int), 1, theDISC);
+		cout << cellAddress;
+		cout << endl;
+		if (cellAddress == 0)
 		{
-			fread(&cellAddress, sizeof(int), 1, theDISC);
-		}
-		
-		fileAddresses.push_back(i);
-		if (firstCell)
-		{
-			firstCellAddress = i;
-			firstCell = false;
-		}
-		else
-		{
-			if (i == blockToWrite - 1)
+			fileAddresses.push_back(i);
+			if (firstCell)
 			{
-				int lastCell = -1;
-
-				fseek(theDISC, BLOCK_SIZE + previousCellAddress * sizeof(int), SEEK_SET);
-				fwrite(&lastCell, sizeof(int), 1, theDISC);
-				fseek(theDISC, BLOCK_SIZE + i * sizeof(int), SEEK_SET);
-				fileAddresses.pop_back();
-				fileAddresses.push_back(lastCell);
+				firstCellAddress = i;
+				firstCell = false;
 			}
 			else
 			{
-				fseek(theDISC, BLOCK_SIZE + previousCellAddress * sizeof(int), SEEK_SET);
-				fwrite(&previousCellAddress, sizeof(int), 1, theDISC);
-				fseek(theDISC, BLOCK_SIZE + i * sizeof(int), SEEK_SET);
+				if (blocksLeft == 1)
+				{
+					int lastCell = -1;
+
+					fseek(theDISC, BLOCK_SIZE + previousCellAddress * sizeof(int), SEEK_SET);
+					fwrite(&lastCell, sizeof(int), 1, theDISC);
+					fseek(theDISC, BLOCK_SIZE + i * sizeof(int), SEEK_SET);
+
+					break;
+				}
+				else
+				{
+					fseek(theDISC, BLOCK_SIZE + previousCellAddress * sizeof(int), SEEK_SET);
+					fwrite(&previousCellAddress, sizeof(int), 1, theDISC);
+					fseek(theDISC, BLOCK_SIZE + i * sizeof(int), SEEK_SET);
+				}
 			}
+			//place file
+			previousCellAddress = i;
+			blocksLeft--;
 		}
-		//place file
-		previousCellAddress = i;
 	}
 
 	FILE * newFile = fopen(filename, "rb+");
@@ -184,46 +214,118 @@ int copyToDisc(char* filename) {
 			fileData.size = getSize(filename);
 			strcpy(fileData.name, filename);
 			fwrite(&fileData, sizeof(fileInfo), 1, theDISC);
+			cout << "Zapisano header "<< fileData.name <<" na miejscu: " << i << endl;
 			break;
 		}
 	}
+
+	for (unsigned i = 0; i<fileAddresses.size(); ++i)
+		std::cout << ' ' << fileAddresses[i];
+	std::cout << '\n';
 
 	char buffer[BLOCK_SIZE];
 	//write file
 	for (int i = 0; i < blockToWrite; i++)
 	{
 		int blockAddress = fileAddresses.front();
-		fileAddresses.pop_front();
-		
-		if (blockAddress != -1)
+		fileAddresses.erase(fileAddresses.begin());
+		cout << blockAddress;
+
+		if (fileAddresses.size() != 0)
 		{
-			fread(&buffer, BLOCK_SIZE, 1, theDISC);
+			fread(&buffer, BLOCK_SIZE, 1, newFile);
 			fseek(theDISC, BLOCK_SIZE * (blockAddress + info.nonDataSize), SEEK_SET);
 			fwrite(&buffer, BLOCK_SIZE, 1, theDISC);
 		}
 		else
 		{
-			int finalSizeToWrite = getSize(filename) % BLOCK_SIZE;
+			int finalSizeToWrite = fileSize % BLOCK_SIZE;
 
-			fread(&buffer, finalSizeToWrite, 1, theDISC);
+			fread(&buffer, finalSizeToWrite, 1, newFile);
 			fseek(theDISC, BLOCK_SIZE * (blockAddress + info.nonDataSize), SEEK_SET);
 			fwrite(&buffer, finalSizeToWrite, 1, theDISC);
+			break;
 		}
 	}
+	
+	info.fileCount++;
+	info.freeBlocks = info.freeBlocks - blockToWrite;
+	fseek(theDISC, 0, SEEK_SET);
+	fwrite(&info, sizeof(discInfo), 1, theDISC);
 
 	fclose(newFile);
 	fclose(theDISC);
 	return 1;
 }
 
+void gotoHeaders(FILE * disc)
+{
+	fseek(theDISC, sizeof(discInfo), SEEK_SET);
+}
+
+void gotoBeggining(FILE * disc)
+{
+	fseek(theDISC, 0, SEEK_SET);
+}
+
+int copyOutside(char* filename)
+{
+	theDISC = fopen("VirtualDisc", "rb+");
+
+	if (!doesFileExist(theDISC, filename))
+		return 0;
+
+	gotoHeaders();
+}
 
 void main() {
-	int a;
-	cin >> a;
-	createDisc(a);
-	cout << getSize("VirtualDisc");
-	//copyToDisc("test1");
+	//createDisc(a);
+	while (1)
+	{
+		cout << "\nSystem plikow.\nWybierz polecenie:\n1. Stworz dysk.\n2. Skopiuj plik na dysk.\n" <<
+			"3. Usun dysk.\n4. Skopiuj plik na komputer."<< endl;
 
-	_getch();
-	deleteDisc();
+		int a;
+		cin >> a;
+
+		switch (a)
+		{
+			case (1):
+			{
+				cout << "Podaj pojemnosc w kB: ";
+				int size;
+				cin >> size;
+				createDisc(size);
+				break;
+			}
+			case (2):
+			{
+				cout << "Podaj nazwe pliku: ";
+				std::cin.clear();
+				string input;
+				char filename[24];
+				cin >> input;
+				strcpy(filename, input.c_str());
+				copyToDisc(filename);
+				break;
+			}
+			case (3):
+			{
+				deleteDisc();
+			}
+			case (4):
+			{
+				cout << "Podaj nazwe pliku: ";
+				std::cin.clear();
+				string input;
+				char filename[24];
+				cin >> input;
+				strcpy(filename, input.c_str());
+				copyOutside(filename);
+				break;
+			}
+			default:
+				break;
+		}
+	}
 }
