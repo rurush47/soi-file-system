@@ -1,9 +1,13 @@
 ﻿#include "fileSystem.h"
+#define THREAD_COUNT 4
+#define COPIER_COUNT 2
+#define DELETER_COUNT 2
+
 using namespace std;
 FileSystem fileSystem;
 
 void main() {
-	//fileSystem.monitorTest();
+	
 	while (1)
 	{
 		cout << "\nSystem plikow.\nWybierz polecenie:\n1. Stworz dysk.\n2. Skopiuj plik na dysk.\n" <<
@@ -84,8 +88,81 @@ void main() {
 				fileSystem.printDiscInfo();
 				break;
 			}
+			case (9):
+			{
+				fileSystem.monitorTest();
+				break;
+			}
+			case (10):
+			{
+				testMultiThread();
+				break;
+			}
 			default:
 				break;
 		}
 	}
+}
+
+void fileCopier()
+{
+	for (int i = 0; i < 3; i++)
+	{
+		cout << "proba skopiowania test1" << endl;
+		fileSystem.copyToDisc("test1");
+		fileSystem.printCatalogue();
+
+		cout << "proba skopiowania test2" << endl;
+		fileSystem.copyToDisc("test2");
+		fileSystem.printCatalogue();
+	}
+}
+
+void fileDeleter()
+{
+	for (int i = 0; i < 3; i++)
+	{
+		cout << "proba usuniecia test1" << endl;
+		fileSystem.deleteFile("test1");
+		fileSystem.printCatalogue();
+
+		cout << "proba usuniecia test2" << endl;
+		fileSystem.deleteFile("test2");
+		fileSystem.printCatalogue();
+	}
+}
+
+int testMultiThread()
+{
+	int i;
+#ifdef _WIN32
+	HANDLE tid[THREAD_COUNT];
+	DWORD id;
+
+	//utworz watek producenta
+	for (i = 0; i < COPIER_COUNT; i++)
+		tid[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)fileCopier, (void*)i, 0, &id);
+	//utworz watki konsumentow
+	for (i = COPIER_COUNT; i < COPIER_COUNT + DELETER_COUNT; i++)
+		tid[i] = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)fileDeleter, (void*)i, 0, &id);
+
+	for (i = 0; i <= THREAD_COUNT; i++)
+		WaitForSingleObject(tid[i], INFINITE);
+
+#else
+	pthread_t tid[THREAD_COUNT];
+
+	//utworz watek producenta
+	pthread_create(&(tid[0]), NULL, producent, 0);
+
+	//utworz watki konsumentow
+	for (i = 1; i <= CONS_COUNT; i++)
+		pthread_create(&(tid[i]), NULL, konsument, (void*)i);
+
+
+	//czekaj na zakonczenie watkow
+	for (i = 0; i < CONS_COUNT + 1; i++)
+		pthread_join(tid[i], (void **)NULL);
+#endif
+	return 0;
 }

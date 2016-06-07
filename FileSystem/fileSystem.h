@@ -22,6 +22,8 @@ struct fileInfo {
 	int address;
 };
 
+int testMultiThread();
+
 class FileSystem : Monitor
 {
 private:
@@ -53,5 +55,6 @@ public:
 	void openDisc();
 	void leaveDisc();
 	void monitorTest();
+	bool doesDiscExist(FILE * disc);
 };
 

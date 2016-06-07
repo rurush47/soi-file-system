@@ -51,13 +51,29 @@ void FileSystem::gotoFat(FILE * disc)
 	fseek(disc, BLOCK_SIZE, SEEK_SET);
 }
 
+bool FileSystem::doesDiscExist(FILE * disc)
+{
+	if (disc != NULL)
+		return true;
+	else
+		return false;
+}
+
 void FileSystem::printFAT() {
 	openDisc();
 	FILE * theDISC = fopen("VirtualDisc", "rb+");
+
+	if (!doesDiscExist(theDISC))
+	{
+		cout << "Dysk nie istnieje" << endl;
+		return;
+	}
+
+	discInfo info = getDiscInfo(theDISC);
 	int m;
 	
 	gotoFat(theDISC);
-	for (int i = 0; i < BLOCK_SIZE / sizeof(int); i++) {
+	for (int i = 0; i < info.size; i++) {
 		fread(&m, sizeof(int), 1, theDISC);
 		if (m <= 9 && m >= 0)
 			cout << " ";
@@ -65,6 +81,9 @@ void FileSystem::printFAT() {
 		if (i % 32 == 31)
 			cout << endl;
 	}
+
+	cout << endl;
+
 	fclose(theDISC);
 	leaveDisc();
 }
@@ -150,6 +169,12 @@ int FileSystem::copyToDisc(char* filename) {
 	openDisc();
 	theDISC = fopen("VirtualDisc", "rb+");
 
+	if (!doesDiscExist(theDISC))
+	{
+		cout << "Dysk nie istnieje" << endl;
+		return 0;
+	}
+
 	int fileSize = getSize(filename);
 	discInfo info;
 
@@ -158,6 +183,7 @@ int FileSystem::copyToDisc(char* filename) {
 	if (info.fileCount >= MAX_FILES)
 	{
 		cout << "Brak miejsca na pliki.\n";
+		leaveDisc();
 		return 0;
 	}
 
@@ -166,12 +192,14 @@ int FileSystem::copyToDisc(char* filename) {
 	if (blockToWrite > info.freeBlocks)
 	{
 		cout << "Brak miejsca na pliki.\n";
+		leaveDisc();
 		return 0;
 	}
 
 	if (doesFileExist(theDISC, filename) >= 0)
 	{
 		cout << "Plik o podanej nazwie ju¿ istnieje.\n";
+		leaveDisc();
 		return 0;
 	}
 
@@ -230,7 +258,7 @@ int FileSystem::copyToDisc(char* filename) {
 
 	FILE * newFile = fopen(filename, "rb+");
 	//make file header
-	fseek(theDISC, sizeof(fileInfo), SEEK_SET);
+	fseek(theDISC, sizeof(discInfo), SEEK_SET);
 	fileInfo fileHeader;
 
 	for (int i = 0; i < MAX_FILES; i++)
@@ -249,14 +277,10 @@ int FileSystem::copyToDisc(char* filename) {
 			fileData.size = fileSize;
 			strcpy(fileData.name, filename);
 			fwrite(&fileData, sizeof(fileInfo), 1, theDISC);
-			cout << "Zapisano header " << fileData.name << " na miejscu: " << i << endl;
+			//cout << "Zapisano header " << fileData.name << " na miejscu: " << i << endl;
 			break;
 		}
 	}
-
-	for (unsigned i = 0; i<fileAddresses.size(); ++i)
-		std::cout << ' ' << fileAddresses[i];
-	std::cout << '\n';
 
 	char buffer[BLOCK_SIZE];
 	//write file
@@ -347,12 +371,19 @@ int FileSystem::copyOutside(char* filename, char* outputFilename)
 	openDisc();
 	theDISC = fopen("VirtualDisc", "rb+");
 
+	if (!doesDiscExist(theDISC))
+	{
+		cout << "Dysk nie istnieje" << endl;
+		return 0;
+	}
+
 	discInfo info = getDiscInfo(theDISC);
 	int headerAddress = doesFileExist(theDISC, filename);
 
 	if (headerAddress == -1)
 	{
 		cout << "Nie ma pliku o podanej nazwie na wirtualnym dysku.";
+		leaveDisc();
 		return 0;
 	}
 
@@ -366,7 +397,6 @@ int FileSystem::copyOutside(char* filename, char* outputFilename)
 
 	int fatAddress = fileHeader.address;
 
-	int count = 1;
 	while (1)
 	{
 		char buffer[BLOCK_SIZE];
@@ -402,6 +432,12 @@ int FileSystem::deleteFile(char* filename)
 	openDisc();
 	FILE * theDISC = fopen("VirtualDisc", "rb+");
 
+	if (!doesDiscExist(theDISC))
+	{
+		cout << "Dysk nie istnieje" << endl;
+		return 0;
+	}
+
 	int fatAddress;
 	int fileAddress = doesFileExist(theDISC, filename);
 	fileInfo fileHeader;
@@ -411,6 +447,8 @@ int FileSystem::deleteFile(char* filename)
 	if (fileAddress == -1)
 	{
 		cout << "Plik o podanej nazwie nie istnieje\n";
+		leaveDisc();
+		return 0;
 	}
 
 	//read address and delete header
@@ -461,6 +499,12 @@ void FileSystem::printCatalogue()
 	openDisc();
 	FILE * theDISC = fopen("VirtualDisc", "rb+");
 
+	if (!doesDiscExist(theDISC))
+	{
+		cout << "Dysk nie istnieje" << endl;
+		return;
+	}
+
 	fseek(theDISC, sizeof(discInfo), SEEK_SET);
 
 	for (int i = 0; i < MAX_FILES; i++)
@@ -483,6 +527,13 @@ void FileSystem::printDiscInfo()
 {
 	openDisc();
 	FILE * theDISC = fopen("VirtualDisc", "rb+");
+
+	if (!doesDiscExist(theDISC))
+	{
+		cout << "Dysk nie istnieje" << endl;
+		return;
+	}
+
 	discInfo info;
 
 	//fseek(theDISC, 0, SEEK_SET);
