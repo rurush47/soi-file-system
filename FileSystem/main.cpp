@@ -153,15 +153,16 @@ int testMultiThread()
 	pthread_t tid[THREAD_COUNT];
 
 	//utworz watek producenta
-	pthread_create(&(tid[0]), NULL, producent, 0);
+	for (i = 0; i < COPIER_COUNT; i++)
+		pthread_create(&(tid[i]), NULL, fileCopier, (void*)i);
 
 	//utworz watki konsumentow
-	for (i = 1; i <= CONS_COUNT; i++)
+	for (i = COPIER_COUNT; i < THREAD_COUNT; i++)
 		pthread_create(&(tid[i]), NULL, konsument, (void*)i);
 
 
 	//czekaj na zakonczenie watkow
-	for (i = 0; i < CONS_COUNT + 1; i++)
+	for (i = 0; i < THREAD_COUNT; i++)
 		pthread_join(tid[i], (void **)NULL);
 #endif
 	return 0;
